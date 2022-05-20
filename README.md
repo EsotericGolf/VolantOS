@@ -1,4 +1,4 @@
-# Welcome!
+<!--# Welcome!
 
 This is an x86 operating system written in *(mostly)* Volant(Created for the language jam).
 
@@ -14,3 +14,4 @@ Currently, *VolantOS* initializes the **[Global Descriptor Table](https://en.wik
 That's about it right now, it prints *"Hello World!"* to the screen and fills it with blue if you press a key.
 
 Later on I will implement **[Paging](https://en.wikipedia.org/wiki/Paging)** and memory allocation, potentially followed by basic user programs and keyboard input.
+-->
