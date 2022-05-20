@@ -1,0 +1,141 @@
+import "heap.vo";
+
+framebuffer: *u8 = cast(*u8) 0x000B8000;
+
+// Write a character to the framebuffer
+func WriteAt(c: u8, i: i32) i32 {
+	framebuffer[2 * i] = c;
+	framebuffer[2 * i + 1] = 0x15;
+}
+
+func Clear() void {
+	for i := 0; i <= 80 * 25; i++ {
+		WriteAt(' ', i);
+	}
+}
+
+struct IDT_Entry {
+  offset_lower: u16;
+	selector: u16;
+	zero: u8;
+	type_attr: u8;
+	offset_higher: u16;
+}
+
+// Was unable to get this to work right from inside volant.
+/*
+struct GDT_Descriptor {
+	size: u16;
+	address: u32;
+}
+*/
+
+struct GDT_Entry {
+	limit_low: u16;
+	base_low: u16;
+	base_middle: u8;
+	access: u8;
+	flags: u8;
+	base_high: u8; 
+}
+
+IDT: [256]IDT_Entry;
+
+func MakeSegmentEntry(base: u32, limit: u32, access: u8) *GDT_Entry {
+	ent: *GDT_Entry = cast(*GDT_Entry) heap.malloc(8);
+
+	ent.base_low = base & 0xFFFF;
+	ent.base_middle = (base >> 16) & 0xFF;
+	ent.base_high = (base >> 24) & 0xFF;
+
+	ent.limit_low = limit & 0xFFFF;
+	ent.flags = (limit >> 16) & 0x0F;
+
+	ent.flags = ent.flags | 0xC0;
+	ent.access = access;
+
+	return ent;
+}
+
+// Keyboard interrupt.
+func irq1_vo() void {
+	Clear();
+	$inb(0x60);
+	$outb(0x20, 0x20);
+}
+
+func emptyirq_vo() void {
+	$outb(0x20, 0x20);
+}
+
+// Returns an IDT_Entry describing an interrupt.
+func MakeInterruptEntry(addr: u32) IDT_Entry {
+	ent: IDT_Entry = (IDT_Entry) {};
+
+	ent.offset_lower = addr & 0xFFFF;
+
+	ent.selector = 0x08;
+
+	ent.zero = 0;
+
+	ent.type_attr = 0x8e;
+
+	ent.offset_higher = (addr & 0xFFFF0000) >> 16;
+
+	return ent;
+}
+
+func main() i32 {
+	// Clear();
+
+	// Cannot use a string literal as something about where it's put in memory makes the resulting binary invalid.
+	// Doesn't really need to be malloc'd yet.
+	str: *u8;
+
+	str[0] = 'H';
+	str[1] = 'e';
+	str[2] = 'l';
+	str[3] = 'l';
+	str[4] = 'o';
+	str[5] = ' ';
+	str[6] = 'W';
+	str[7] = 'o';
+	str[8] = 'r';
+	str[9] = 'l';
+	str[10] = 'd';
+	str[11] = '!';
+
+	for i := 0; i < 12; i++ {
+		WriteAt(str[i], i);
+	}
+
+	/* remap the PIC */
+	// Normally the irq interrupts overlap with the exception interrupts, which you don't want, so we remap them.
+	$outb(0x20, 0x11);
+	$outb(0xA0, 0x11);
+	$outb(0x21, 0x20);
+	$outb(0xA1, 40);
+	$outb(0x21, 0x04);
+	$outb(0xA1, 0x02);
+	$outb(0x21, 0x01);
+	$outb(0xA1, 0x01);
+	$outb(0x21, 0x0);
+	$outb(0xA1, 0x0);
+
+	IDT[32] = MakeInterruptEntry(cast(u32) $blankirq);
+	IDT[33] = MakeInterruptEntry(cast(u32) $irq1_asm);
+
+	idtptr: [2]u64;
+
+	idtptr[0] = (64 * 256) + (((cast(u32) IDT) & 0xffff) << 16);
+	idtptr[1] = (cast(u32) IDT) >> 16;
+
+	$AddGDTEntry(1, MakeSegmentEntry(0, 0xFFFFFFFF, 0x9A));
+	$AddGDTEntry(2, MakeSegmentEntry(0, 0xFFFFFFFF, 0x92));
+
+	$RefreshGDT();
+
+	$load_idt(idtptr);
+
+	return 0;
+}
